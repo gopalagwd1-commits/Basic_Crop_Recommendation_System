@@ -1,0 +1,22 @@
+const $=s=>document.querySelector(s);let latest=null,timer;
+$("#year").textContent=new Date().getFullYear();
+$("#menu").addEventListener("click",()=>$("#nav").classList.toggle("open"));
+document.querySelectorAll("#nav a").forEach(a=>a.addEventListener("click",()=>$("#nav").classList.remove("open")));
+const observer=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add("visible");observer.unobserve(e.target)}}),{threshold:.12});
+document.querySelectorAll(".reveal").forEach(e=>observer.observe(e));
+$("#rainfall").addEventListener("input",e=>$("#rainval").value=e.target.value+" mm");
+function toast(msg){$("#toast").textContent=msg;$("#toast").classList.add("show");clearTimeout(timer);timer=setTimeout(()=>$("#toast").classList.remove("show"),3500)}
+const emoji={"Rice":"🌾","Maize":"🌽","Ragi (Finger millet)":"🌾","Groundnut":"🥜","Jowar (Sorghum)":"🌾","Green gram":"🫘","Wheat":"🌾","Cotton":"🌼","Seasonal vegetables":"🥬","Coconut":"🥥"};
+function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+$("#cropForm").addEventListener("submit",async e=>{e.preventDefault();$("#error").textContent="";const btn=$("#submit");btn.disabled=true;btn.textContent="Finding matches…";
+try{const d=Object.fromEntries(new FormData(e.currentTarget));d.rainfall=Number(d.rainfall);d.landArea=d.landArea?Number(d.landArea):null;const r=await fetch("/api/crops/recommend",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d)});const data=await r.json();if(!r.ok)throw Error(data.message||"Recommendation failed");latest={...data,farmerName:d.farmerName};$("#empty").classList.add("hidden");$("#results").classList.remove("hidden");$("#summary").textContent=`${data.input.soilType} soil · ${data.input.season} · ${data.input.rainfall} mm rainfall · ${data.input.waterAvailability} water`;
+$("#cropList").innerHTML=(data.crops||[]).map((c,i)=>`<article class="crop-card" style="animation-delay:${i*80}ms"><div class="crop-top"><span class="crop-icon">${emoji[c.name]||"🌱"}</span><div class="crop-name"><b>${esc(c.name)}</b><small>${esc(c.suitability)}</small></div><span class="score">${c.score}% match</span></div><div class="track"><span style="width:${c.score}%"></span></div><ul class="reasons">${(c.reasons||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul><p class="crop-note">${esc(c.note)}</p></article>`).join("")||"<p>No clear match. Please seek local advice.";
+$("#notice").textContent=data.notice+(data.saved?" Saved to MongoDB.":" MongoDB is not configured; history was not saved.");$("#results").scrollIntoView({behavior:"smooth",block:"nearest"});toast("Your crop shortlist is ready.");
+}catch(err){$("#error").textContent=err.message||"Could not connect to the server."}finally{btn.disabled=false;btn.textContent="Recommend crops →"}});
+$("#reset").addEventListener("click",()=>{latest=null;$("#results").classList.add("hidden");$("#empty").classList.remove("hidden");toast("Results cleared.")});
+$("#smsOpen").addEventListener("click",()=>{if(!latest){toast("Generate a recommendation first.");return}$("#smsError").textContent="";$("#smsDialog").showModal()});
+$("#closeDialog").addEventListener("click",()=>$("#smsDialog").close());$("#cancelSms").addEventListener("click",()=>$("#smsDialog").close());
+$("#sendSms").addEventListener("click",async()=>{const phone=$("#phone").value.trim();$("#smsError").textContent="";if(!/^\+?[1-9]\d{7,14}$/.test(phone)){ $("#smsError").textContent="Use international format, e.g. +919876543210.";return}
+const crops=latest.crops.slice(0,3).map(c=>`${c.name} (${c.score}%)`).join(", ");const message=`Verdant crop suggestions: ${crops}. Soil ${latest.input.soilType}; season ${latest.input.season}; rainfall ${latest.input.rainfall}mm; water ${latest.input.waterAvailability}. Verify locally before planting.`.slice(0,500);
+const b=$("#sendSms");b.disabled=true;b.textContent="Sending…";try{const r=await fetch("/api/sms/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone,message})});const data=await r.json();if(!r.ok)throw Error(data.message||"SMS failed");$("#smsDialog").close();toast("SMS request accepted by provider.");}catch(err){$("#smsError").textContent=err.message}finally{b.disabled=false;b.textContent="Send SMS ↗"}});
+fetch("/api/health").then(r=>r.json()).then(d=>console.info("App health:",d)).catch(()=>{});
